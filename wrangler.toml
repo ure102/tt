@@ -1,7 +1,0 @@
-name = "tv-comprobantes"
-main = "cloudflare-worker.js"
-compatibility_date = "2026-11-07"
-
-[vars]
-ALLOWED_ORIGIN = "https://ure102.github.io"
-FIREBASE_PROJECT_ID = "tevere-682a7"
