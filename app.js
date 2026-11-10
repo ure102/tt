@@ -32,7 +32,7 @@ const fld=(n,l,o={})=>{const v=o.v??"",a=`name="${n}"${o.req?" required":""}${o.
 const roleChecks=(sel=["reseller","recruiter"])=>`<div class="wide chk">${Object.entries(ROLES).map(([k,t])=>`<label class="checkline"><input type="checkbox" name="roles" value="${k}"${sel.includes(k)?" checked":""}>${t}</label>`).join("")}</div>`;
 let shT;
 function sheet(html,cls=""){const s=$("sheet");clearTimeout(shT);$("shBox").className="sh-box "+cls;$("shBox").innerHTML=`<i class="grab"></i>${html}`;s.classList.remove("hidden");void s.offsetWidth;s.classList.add("open");document.body.classList.add("noscroll")}
-function closeSheet(){const s=$("sheet");if(s.classList.contains("hidden"))return;s.classList.remove("open");document.body.classList.remove("noscroll");clearTimeout(shT);shT=setTimeout(()=>s.classList.add("hidden"),230)}
+function closeSheet(){const s=$("sheet");if(s.classList.contains("hidden"))return;if($("shBox").classList.contains("media-sheet")){mediaItem=null;mediaIndex=-1}s.classList.remove("open");document.body.classList.remove("noscroll");clearTimeout(shT);shT=setTimeout(()=>s.classList.add("hidden"),230)}
 function sheetForm(title,inner,onsub,label="Guardar"){sheet(`<div class="sh-title">${title}<button class="x" data-a="close" type="button">✕</button></div><form>${inner}<button class="primary full lg">${label}</button></form>`);const f=$("shBox").querySelector("form");f.onsubmit=e=>{e.preventDefault();run(async()=>{const m=await onsub(new FormData(f));closeSheet();return m})};return f}
 const openForm=(t,body,onsub,label)=>sheetForm(t,`<div class="form-grid">${body}</div>`,onsub,label);
 const photoField=()=>`<label class="photo"><input type="file" name="proof" accept="image/*"><div class="pv"><span>📷</span>Tocá para sacar o elegir la foto</div></label>`;
@@ -226,9 +226,53 @@ function msgForm(m){
   const d={title:f.get("title"),kind:f.get("kind"),body:f.get("body"),roles,dest:f.get("dest"),active:true,updatedBy:me.uid,updatedAt:ts()};
   if(m)await updateDoc(doc(db,"contentMessages",m.id),d);else await addDoc(collection(db,"contentMessages"),{...d,createdBy:me.uid,createdAt:ts()});
   await refresh();return "Mensaje guardado."})}
+const driveFileId=u=>u.hostname==="drive.google.com"?(u.pathname.match(/\/file\/d\/([^/]+)/)?.[1]||u.searchParams.get("id")):null;
+const youtubeId=u=>/^(www\.)?(youtube\.com|m\.youtube\.com|youtu\.be)$/.test(u.hostname)?(u.searchParams.get("v")||u.pathname.match(/\/(?:embed|shorts|live|v)\/([^/?]+)/)?.[1]||(u.hostname==="youtu.be"?u.pathname.match(/^\/([^/?]+)/)?.[1]:null)):null;
+function mediaInfo(g){
+ let u;try{u=new URL(g.url)}catch{return{type:"link",url:null}}
+ if(u.protocol!=="https:")return{type:"link",url:null};
+ const path=u.pathname.toLowerCase(),driveId=driveFileId(u),ytId=youtubeId(u),vimeoId=u.hostname==="vimeo.com"||u.hostname==="www.vimeo.com"?u.pathname.match(/\/(\d+)/)?.[1]:null;
+ const image=/\.(?:avif|gif|jpe?g|png|webp|svg)$/.test(path),video=/\.(?:m4v|mov|mp4|ogv|webm)$/.test(path),pdf=/\.pdf$/.test(path);
+ let type=image||g.kind==="flyer"?"image":pdf||g.kind==="document"?"pdf":video||ytId||vimeoId||g.kind==="video"?"video":"link";
+ if(g.kind==="link"&&driveId&&!image&&!pdf)type="link";
+ const preview=driveId?`https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w800`:ytId?`https://i.ytimg.com/vi/${encodeURIComponent(ytId)}/hqdefault.jpg`:null;
+ const embed=ytId?`https://www.youtube-nocookie.com/embed/${encodeURIComponent(ytId)}?autoplay=1`:vimeoId?`https://player.vimeo.com/video/${encodeURIComponent(vimeoId)}?autoplay=1`:driveId?`https://drive.google.com/file/d/${encodeURIComponent(driveId)}/preview`:g.url;
+ return{type,url:u.href,preview,driveId,ytId,vimeoId,embed};
+}
+const mediaImages=()=>gal.filter(g=>mediaInfo(g).type==="image");
+let mediaIndex=0,mediaItem=null;
+function mediaThumb(g){
+ const m=mediaInfo(g),label=`Ver ${g.title||"material"}`;
+ let preview=m.type==="image"&&m.preview?`<img class="media-thumb-img" src="${esc(m.preview)}" alt="" loading="lazy">`:m.type==="image"?`<img class="media-thumb-img" src="${esc(m.url)}" alt="" loading="lazy">`:
+  m.type==="video"&&m.ytId?`<img class="media-thumb-img" src="${esc(m.preview)}" alt="" loading="lazy">`:
+  m.type==="video"&&m.driveId?`<img class="media-thumb-img" src="${esc(m.preview)}" alt="" loading="lazy">`:
+  m.type==="video"&&!m.vimeoId&&!m.driveId?`<video class="media-thumb-video" src="${esc(m.url)}" muted playsinline preload="metadata"></video>`:
+  m.type==="pdf"&&m.driveId?`<img class="media-thumb-img" src="${esc(m.preview)}" alt="" loading="lazy">`:
+  m.type==="pdf"?`<iframe class="media-thumb-frame" src="${esc(m.url)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH" title="" loading="lazy" tabindex="-1" aria-hidden="true"></iframe>`:"";
+ const icon=m.type==="image"?"▧":m.type==="video"?"▶":m.type==="pdf"?"PDF":"↗";
+ return `<div class="media-thumb${preview?" has-preview":""}" role="button" tabindex="0" aria-label="${esc(label)}" data-a="openMedia" data-id="${esc(g.id)}"><span class="media-mark">${icon}</span>${preview}<span class="media-play">${m.type==="video"?"▶":"Ver"}</span></div>`;
+}
+function mediaViewer(){
+ if(!mediaItem)return;
+ const g=mediaItem,m=mediaInfo(g),images=mediaImages(),imageAt=images.findIndex(x=>x.id===g.id);
+ let body=m.type==="image"?`<img class="media-view-image" src="${esc(m.driveId?m.preview:m.url)}" alt="${esc(g.title)}">`:
+  m.type==="video"&&(m.ytId||m.vimeoId||m.driveId)?`<iframe class="media-view-frame" src="${esc(m.embed)}" title="${esc(g.title)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`:
+  m.type==="video"?`<video class="media-view-video" src="${esc(m.url)}" controls autoplay playsinline></video>`:
+  m.type==="pdf"?`<iframe class="media-view-frame pdf-viewer" src="${esc(m.driveId?m.embed:`${m.url}#toolbar=1&navpanes=0`)}" title="${esc(g.title)}" allow="fullscreen"></iframe>`:
+  `<div class="media-link-message"><span>↗</span><p>${m.url?"Este material es un enlace externo.":"El enlace no es válido o no usa HTTPS."}</p>${m.url?`<a class="small-btn pri" href="${esc(m.url)}" target="_blank" rel="noopener noreferrer">Abrir enlace ↗</a>`:""}</div>`;
+ const counter=imageAt>=0&&images.length>1?`<span class="media-counter">${imageAt+1} / ${images.length}</span>`:"";
+ sheet(`<div class="sh-title">${esc(g.title||"Material")}${counter}<button class="x" data-a="close" type="button" aria-label="Cerrar">✕</button></div><div class="media-stage">${body}${imageAt>=0&&images.length>1?`<button class="media-nav prev" data-a="mediaPrev" aria-label="Imagen anterior">‹</button><button class="media-nav next" data-a="mediaNext" aria-label="Imagen siguiente">›</button>`:""}</div>${g.description?`<p class="media-description">${esc(g.description)}</p>`:""}`,"media-sheet");
+}
+function openMedia(id){
+ const g=gal.find(x=>x.id===id);if(!g)return;
+ mediaItem=g;mediaIndex=mediaImages().findIndex(x=>x.id===id);mediaViewer();
+}
+function changeMediaImage(step){
+ const images=mediaImages();if(!images.length)return;
+ mediaIndex=(mediaIndex+step+images.length)%images.length;mediaItem=images[mediaIndex];mediaViewer();
+}
 function galPage(){
- const ic={video:"▶",document:"PDF",flyer:"▧"};
- shell(`<section class="panel"><div class="panel-head"><h2>Material comercial</h2>${isA()?`<button class="primary" data-a="newGal">＋ Material</button>`:""}</div><div class="cards two">${gal.map(g=>`<article class="card row"><div class="gicon">${ic[g.kind]||"↗"}</div><div class="ginfo"><b>${esc(g.title)}</b>${g.description?`<p>${esc(g.description)}</p>`:""}<div class="toolbar"><a class="small-btn" href="${esc(g.url)}" target="_blank" rel="noopener">Abrir ↗</a>${isA()?`<button class="small-btn" data-a="editGal" data-id="${g.id}">Editar</button><button class="small-btn danger" data-a="delGal" data-id="${g.id}">Quitar</button>`:""}</div></div></article>`).join("")||'<div class="empty">Sin materiales.</div>'}</div></section>`)}
+ shell(`<section class="panel"><div class="panel-head"><h2>Material comercial</h2>${isA()?`<button class="primary" data-a="newGal">＋ Material</button>`:""}</div><div class="cards two material-grid">${gal.map(g=>`<article class="card material-card">${mediaThumb(g)}<div class="ginfo"><b>${esc(g.title)}</b>${g.description?`<p>${esc(g.description)}</p>`:""}<div class="toolbar"><button class="small-btn pri" data-a="openMedia" data-id="${esc(g.id)}">Ver material</button>${isA()?`<button class="small-btn" data-a="editGal" data-id="${esc(g.id)}">Editar</button><button class="small-btn danger" data-a="delGal" data-id="${esc(g.id)}">Quitar</button>`:""}</div></div></article>`).join("")||'<div class="empty">Sin materiales.</div>'}</div></section>`)}
 function galForm(g){
  openForm(g?"Editar material":"Nuevo material",`${fld("title","Nombre",{req:1,v:g?.title})}${fld("kind","Tipo",{v:g?.kind,opts:[["flyer","Flyer / imagen"],["video","Video"],["document","PDF / documento"],["link","Enlace"]]})}${fld("url","Enlace https (Drive, YouTube…)",{type:"url",req:1,v:g?.url,wide:1})}${fld("description","Descripción",{type:"textarea",v:g?.description})}<div class="wide help">Visible para:</div>${roleChecks(g?.roles)}`,async f=>{
   const roles=f.getAll("roles"),url=f.get("url").trim();if(!roles.length)throw Error("Elegí al menos un rol.");if(!/^https:\/\//i.test(url))throw Error("Usá un enlace HTTPS.");
@@ -261,10 +305,19 @@ const ACT={
  shareMsg:()=>navigator.share?navigator.share({text:mt()}).catch(()=>{}):ACT.copyMsg(),copyMsg:()=>navigator.clipboard?.writeText(mt()).then(()=>toast("Texto copiado.")),
  delMsg:id=>confirm("¿Eliminar mensaje?")&&run(async()=>{await deleteDoc(doc(db,"contentMessages",id));await refresh();return "Eliminado."}),
  newGal:()=>galForm(),editGal:id=>galForm(gal.find(g=>g.id===id)),
+ openMedia:id=>openMedia(id),mediaPrev:()=>changeMediaImage(-1),mediaNext:()=>changeMediaImage(1),
  delGal:id=>confirm("¿Quitar material?")&&run(async()=>{await deleteDoc(doc(db,"gallery",id));await refresh();return "Quitado."}),
  support:()=>openWa($("hm")?.value||"Hola, necesito ayuda con el panel TV.")};
 document.addEventListener("click",e=>{const b=e.target.closest("[data-go],[data-a]");if(!b)return;if(b.dataset.go){closeSheet();return go(b.dataset.go)}ACT[b.dataset.a]?.(b.dataset.id,b)});
 document.addEventListener("input",e=>{if(e.target.id!=="q")return;F.q=e.target.value;$("list").innerHTML=clientList()});
-document.addEventListener("keydown",e=>e.key==="Escape"&&closeSheet());
+document.addEventListener("keydown",e=>{
+ if(e.key==="Escape")return closeSheet();
+ if($("sheet").classList.contains("open")&&$("shBox").classList.contains("media-sheet")&&mediaIndex>=0){
+  if(e.key==="ArrowLeft"){e.preventDefault();changeMediaImage(-1)}
+  if(e.key==="ArrowRight"){e.preventDefault();changeMediaImage(1)}
+ }
+ if((e.key==="Enter"||e.key===" ")&&e.target.matches(".media-thumb[role=button]")){e.preventDefault();e.target.click()}
+});
+document.addEventListener("error",e=>{if(e.target.matches?.(".media-thumb-img,.media-thumb-video"))e.target.closest(".media-thumb")?.classList.add("media-fallback")},true);
 $("refreshBtn").onclick=()=>me&&run(async()=>{$("refreshBtn").classList.add("spin");try{await refresh()}finally{$("refreshBtn").classList.remove("spin")}return "Actualizado."});
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
