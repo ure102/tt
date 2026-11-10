@@ -78,7 +78,7 @@ function home(){
  ${acts.length?`<div class="toolbar acts">${acts.join("")}</div>`:""}
  <section class="panel"><h2>Vencen pronto</h2>${table(["Cliente","Vence","WhatsApp"],exp.slice(0,8).map(c=>[`<b>${esc(c.fullName||c.name)}</b>`,expTag(c),renewBtn(c)]),"Nada por vencer ✓")}</section>`)}
 const expTag=c=>{const d=dleft(c);return d===null?"—":`${esc(c.expiresAt)} ${d<0?pill("Vencido "+-d+"d","bad"):d<=7?pill(d===0?"Hoy":d+" d","pending"):""}`};
-const renewBtn=c=>{const u=wa(c.phone);return u?`<a class="small-btn" target="_blank" rel="noopener" href="${u}?text=${encodeURIComponent(`Hola ${c.fullName||c.name}, tu servicio ${dleft(c)<0?"venció":"vence"} el ${c.expiresAt}. ¿Querés renovarlo?`)}">Avisar</a>`:"—"};
+const renewBtn=c=>{const u=wa(c.phone);return u?`<a class="small-btn" target="_blank" rel="noopener" href="${u}?text=${encodeURIComponent(`Hola buenas!${c.fullName||c.name}, queria informarte que tu servicio ${dleft(c)<0?"venció":"vence"} el ${c.expiresAt}. y me interesaria saber si ¿Querés renovarlo?.`)}">Contactar y Avisar</a>`:"—"};
 
 function accessPage(){
  getDocs(query(collection(db,"accessRequests"),where("uid","==",me.uid))).then(r=>{
