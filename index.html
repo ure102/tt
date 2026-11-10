@@ -1,9 +1,13 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#151d2d"><title>TV Panel</title><link rel="stylesheet" href="styles.css"></head>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#151d2d"><meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="TV Panel">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><link rel="icon" href="icon-192.png"><title>TV Panel</title><link rel="stylesheet" href="styles.css"></head>
 <body>
 <main id="loginView" class="login-wrap"><section class="login-card"><div class="brand">TV</div><h1>Ingresar</h1>
-<form id="loginForm"><label>Correo<input id="email" type="email" autocomplete="username" required></label><label>Contraseña<input id="password" type="password" autocomplete="current-password" required></label><button class="primary full">Ingresar</button></form>
+<form id="loginForm"><label>Correo<input id="email" type="email" autocomplete="username" required></label><label>Contraseña<input id="password" type="password" autocomplete="current-password" required></label><button class="primary full lg">Ingresar</button></form>
 <p id="loginError" class="error"></p></section></main>
 <div id="appView" class="app hidden"><aside class="sidebar"><div class="brandline"><span class="brand mini">TV</span><b>TV Panel</b></div><nav id="navigation"></nav><div class="bottom"><div id="userSummary"></div></div></aside>
-<section class="main"><header><div><p class="eyebrow" id="roleLabel"></p><h1 id="pageTitle">Resumen</h1></div><div class="hright"><span id="topUser" class="muted"></span><button id="logoutBtn" class="ghost">Salir</button></div></header><div id="notice" class="notice hidden"></div><div id="content" class="content"></div></section></div>
+<section class="main"><header><div><p class="eyebrow" id="roleLabel"></p><h1 id="pageTitle">Resumen</h1></div><div class="hright"><span id="topUser" class="muted"></span><button id="refreshBtn" class="iconbtn" aria-label="Actualizar">↻</button><button id="logoutBtn" class="ghost">Salir</button></div></header><div id="notice" class="notice hidden"></div><div id="content" class="content"></div></section>
+<nav id="tabbar" class="tabbar"></nav></div>
+<div id="sheet" class="sheet hidden"><div class="sh-bg" data-a="close"></div><div class="sh-box" id="shBox"></div></div>
 <div id="busy" class="busy hidden"><span class="spinner"></span></div><script type="module" src="app.js"></script></body></html>
