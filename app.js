@@ -40,8 +40,8 @@ async function upload(file){
  if(!file||!file.size)throw Error("Adjuntá el comprobante.");
  if(!file.type.startsWith("image/"))throw Error("El comprobante debe ser una imagen.");
  file=await shrink(file);if(file.size>8*1024*1024)throw Error("La imagen supera 8 MB.");
- const fd=new FormData();fd.append("image",file);
- const r=await fetch(uploadServiceUrl,{method:"POST",headers:{Authorization:`Bearer ${await auth.currentUser.getIdToken()}`},body:fd}),j=await r.json().catch(()=>({}));
+ const fd=new FormData();fd.append("image",file);fd.append("token",await auth.currentUser.getIdToken());
+ const r=await fetch(uploadServiceUrl,{method:"POST",body:fd}),j=await r.json().catch(()=>({}));
  if(!r.ok||!j.url)throw Error(j.error||"No se pudo subir el comprobante.");return j.url}
 const proof=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener"><img class="proof" loading="lazy" src="${esc(u)}" alt="Comprobante"></a>`:"—";
 
