@@ -66,10 +66,10 @@ onAuthStateChanged(auth,u=>{if(!u){$("loginView").classList.remove("hidden");$("
 async function load(){
  const A=isA(),f=isR()?"recruiterId":"resellerId",none=Promise.resolve({docs:[]});
  const q=(n,...c)=>getDocs(c.length?query(collection(db,n),...c):collection(db,n));
- const sc=n=>A?q(n):q(n,where(f,"==",me.uid)),rc=n=>A?q(n):q(n,where("roles","array-contains",me.role));
+ const sc=n=>A?q(n):q(n,where(f,"==",me.uid)),rc=n=>q(n);
  const [s,c,t,st,rq,u,m,g,ct]=await Promise.all([getDoc(doc(db,"config","accounting")),sc("clients"),sc("transactions"),sc("settlements"),A?q("accessRequests",where("status","==","pending")):none,A?q("users"):isR()?q("users",where("recruiterId","==",me.uid)):none,rc("contentMessages").catch(soft("mensajes")),rc("gallery").catch(soft("material")),getDoc(doc(db,"config","contact")).catch(soft("contacto"))]);
  const L=(x,k="id")=>x.docs.map(d=>({[k]:d.id,...d.data()})).sort(by);
- S={...DEF,...(s.exists()?s.data():{})};clients=L(c);tx=L(t);sets=L(st);reqs=L(rq);team=L(u,"uid");msgs=L(m);gal=L(g);contact=ct.exists()?ct.data():{}}
+ S={...DEF,...(s.exists()?s.data():{})};clients=L(c);tx=L(t);sets=L(st);reqs=L(rq);team=L(u,"uid");const vis=x=>A||(x.roles||[]).includes(me.role);msgs=L(m).filter(vis);gal=L(g).filter(vis);contact=ct.exists()?ct.data():{}}
 const refresh=async()=>{await load();go(page,true)};
 
 const MAIN={super_admin:["home","clients","transactions","requests"],recruiter:["home","clients","transactions","messages"],reseller:["home","clients","transactions","messages"]};
