@@ -38,7 +38,7 @@ const openForm=(t,body,onsub,label)=>sheetForm(t,`<div class="form-grid">${body}
 const photoField=()=>`<label class="photo"><input type="file" name="proof" accept="image/*"><div class="pv"><span>📷</span>Tocá para sacar o elegir la foto</div></label>`;
 const bindPhoto=f=>{const i=f.querySelector("[name=proof]"),p=f.querySelector(".pv");i.onchange=()=>{const x=i.files[0];if(x)p.innerHTML=`<img src="${URL.createObjectURL(x)}" alt=""><em>Tocá para cambiar</em>`}};
 const shell=(h,fab)=>{$("content").innerHTML=h+(fab?`<button class="fab" data-a="${fab[0]}"><b>＋</b><span>${fab[1]}</span></button>`:"")};
-const soft=e=>{console.warn(e);toast("Algunos datos no se cargaron. Revisá las reglas de Firestore.",1);return{docs:[],exists:()=>false}};
+const soft=l=>e=>{console.warn(l,e);toast(`No se pudo cargar: ${l}. Publicá las reglas de Firestore del zip.`,1);return{docs:[],exists:()=>false}};
 const chips=(opts)=>`<div class="toolbar chips">${opts.map(([k,t])=>`<button class="chip${F.s===k?" on":""}" data-a="chip" data-id="${k}">${t}</button>`).join("")}</div>`;
 const search=()=>`<input id="q" type="search" placeholder="Buscar…" value="${esc(F.q)}">`;
 
@@ -67,7 +67,7 @@ async function load(){
  const A=isA(),f=isR()?"recruiterId":"resellerId",none=Promise.resolve({docs:[]});
  const q=(n,...c)=>getDocs(c.length?query(collection(db,n),...c):collection(db,n));
  const sc=n=>A?q(n):q(n,where(f,"==",me.uid)),rc=n=>A?q(n):q(n,where("roles","array-contains",me.role));
- const [s,c,t,st,rq,u,m,g,ct]=await Promise.all([getDoc(doc(db,"config","accounting")),sc("clients"),sc("transactions"),sc("settlements"),A?q("accessRequests",where("status","==","pending")):none,A?q("users"):isR()?q("users",where("recruiterId","==",me.uid)):none,rc("contentMessages").catch(soft),rc("gallery").catch(soft),getDoc(doc(db,"config","contact")).catch(soft)]);
+ const [s,c,t,st,rq,u,m,g,ct]=await Promise.all([getDoc(doc(db,"config","accounting")),sc("clients"),sc("transactions"),sc("settlements"),A?q("accessRequests",where("status","==","pending")):none,A?q("users"):isR()?q("users",where("recruiterId","==",me.uid)):none,rc("contentMessages").catch(soft("mensajes")),rc("gallery").catch(soft("material")),getDoc(doc(db,"config","contact")).catch(soft("contacto"))]);
  const L=(x,k="id")=>x.docs.map(d=>({[k]:d.id,...d.data()})).sort(by);
  S={...DEF,...(s.exists()?s.data():{})};clients=L(c);tx=L(t);sets=L(st);reqs=L(rq);team=L(u,"uid");msgs=L(m);gal=L(g);contact=ct.exists()?ct.data():{}}
 const refresh=async()=>{await load();go(page,true)};
