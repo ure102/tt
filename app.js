@@ -30,8 +30,15 @@ const fld=(n,l,o={})=>{const v=o.v??"",a=`name="${n}"${o.req?" required":""}${o.
  else i=`<input ${a} type="${o.type||"text"}" value="${esc(v)}"${o.min!=null?` min="${o.min}"`:""}${o.accept?` accept="${o.accept}"`:""}>`;
  return `<label${o.wide||o.type==="textarea"?' class="wide"':""}>${l}${i}</label>`};
 const roleChecks=(sel=["reseller","recruiter"])=>`<div class="wide chk">${Object.entries(ROLES).map(([k,t])=>`<label class="checkline"><input type="checkbox" name="roles" value="${k}"${sel.includes(k)?" checked":""}>${t}</label>`).join("")}</div>`;
-function openForm(title,body,onsub,label="Guardar"){const p=$("fp");p.classList.remove("hidden");p.innerHTML=`<div class="panel-head"><h2>${title}</h2><button class="small-btn" data-a="close" type="button">✕</button></div><form><div class="form-grid">${body}</div><div class="form-actions"><button class="primary">${label}</button></div></form>`;const f=p.querySelector("form");f.onsubmit=e=>{e.preventDefault();run(()=>onsub(new FormData(f)))};p.scrollIntoView({behavior:"smooth",block:"start"})}
-const shell=(h,extra="")=>{$("content").innerHTML=h+`<section class="panel hidden" id="fp"></section>`+extra};
+let shT;
+function sheet(html,cls=""){const s=$("sheet");clearTimeout(shT);$("shBox").className="sh-box "+cls;$("shBox").innerHTML=`<i class="grab"></i>${html}`;s.classList.remove("hidden");void s.offsetWidth;s.classList.add("open");document.body.classList.add("noscroll")}
+function closeSheet(){const s=$("sheet");if(s.classList.contains("hidden"))return;s.classList.remove("open");document.body.classList.remove("noscroll");clearTimeout(shT);shT=setTimeout(()=>s.classList.add("hidden"),230)}
+function sheetForm(title,inner,onsub,label="Guardar"){sheet(`<div class="sh-title">${title}<button class="x" data-a="close" type="button">✕</button></div><form>${inner}<button class="primary full lg">${label}</button></form>`);const f=$("shBox").querySelector("form");f.onsubmit=e=>{e.preventDefault();run(async()=>{const m=await onsub(new FormData(f));closeSheet();return m})};return f}
+const openForm=(t,body,onsub,label)=>sheetForm(t,`<div class="form-grid">${body}</div>`,onsub,label);
+const photoField=()=>`<label class="photo"><input type="file" name="proof" accept="image/*"><div class="pv"><span>📷</span>Tocá para sacar o elegir la foto</div></label>`;
+const bindPhoto=f=>{const i=f.querySelector("[name=proof]"),p=f.querySelector(".pv");i.onchange=()=>{const x=i.files[0];if(x)p.innerHTML=`<img src="${URL.createObjectURL(x)}" alt=""><em>Tocá para cambiar</em>`}};
+const shell=(h,fab)=>{$("content").innerHTML=h+(fab?`<button class="fab" data-a="${fab[0]}"><b>＋</b><span>${fab[1]}</span></button>`:"")};
+const soft=e=>{console.warn(e);toast("Algunos datos no se cargaron. Revisá las reglas de Firestore.",1);return{docs:[],exists:()=>false}};
 const chips=(opts)=>`<div class="toolbar chips">${opts.map(([k,t])=>`<button class="chip${F.s===k?" on":""}" data-a="chip" data-id="${k}">${t}</button>`).join("")}</div>`;
 const search=()=>`<input id="q" type="search" placeholder="Buscar…" value="${esc(F.q)}">`;
 
@@ -60,25 +67,36 @@ async function load(){
  const A=isA(),f=isR()?"recruiterId":"resellerId",none=Promise.resolve({docs:[]});
  const q=(n,...c)=>getDocs(c.length?query(collection(db,n),...c):collection(db,n));
  const sc=n=>A?q(n):q(n,where(f,"==",me.uid)),rc=n=>A?q(n):q(n,where("roles","array-contains",me.role));
- const [s,c,t,st,rq,u,m,g,ct]=await Promise.all([getDoc(doc(db,"config","accounting")),sc("clients"),sc("transactions"),sc("settlements"),A?q("accessRequests",where("status","==","pending")):none,A?q("users"):isR()?q("users",where("recruiterId","==",me.uid)):none,rc("contentMessages").catch(()=>({docs:[]})),rc("gallery").catch(()=>({docs:[]})),getDoc(doc(db,"config","contact")).catch(()=>({exists:()=>false}))]);
+ const [s,c,t,st,rq,u,m,g,ct]=await Promise.all([getDoc(doc(db,"config","accounting")),sc("clients"),sc("transactions"),sc("settlements"),A?q("accessRequests",where("status","==","pending")):none,A?q("users"):isR()?q("users",where("recruiterId","==",me.uid)):none,rc("contentMessages").catch(soft),rc("gallery").catch(soft),getDoc(doc(db,"config","contact")).catch(soft)]);
  const L=(x,k="id")=>x.docs.map(d=>({[k]:d.id,...d.data()})).sort(by);
  S={...DEF,...(s.exists()?s.data():{})};clients=L(c);tx=L(t);sets=L(st);reqs=L(rq);team=L(u,"uid");msgs=L(m);gal=L(g);contact=ct.exists()?ct.data():{}}
 const refresh=async()=>{await load();go(page,true)};
 
+const MAIN={super_admin:["home","clients","transactions","requests"],recruiter:["home","clients","transactions","messages"],reseller:["home","clients","transactions","messages"]};
+const badges=()=>({requests:reqs.length,transactions:isA()||isR()?tx.filter(x=>x.status==="pending").length:0,settlements:isA()?sets.filter(x=>x.status!=="confirmed").length:0});
 function go(p,keep){page=p;if(!keep)F={q:"",s:""};
- const bd={requests:reqs.length,transactions:isA()||isR()?tx.filter(x=>x.status==="pending").length:0,settlements:isA()?sets.filter(x=>x.status!=="confirmed").length:0};
- $("navigation").innerHTML=NAV[me.role].map(k=>`<button class="nav-btn${k===p?" active":""}" data-go="${k}"><i>${PAGES[k][1]}</i><span>${PAGES[k][0]}</span>${bd[k]?`<b class="bd">${bd[k]}</b>`:""}</button>`).join("");
- $("pageTitle").textContent=PAGES[p][2]||PAGES[p][0];PAGE[p]();if(!keep)scrollTo(0,0)}
-
+ const bd=badges(),b=(k,c)=>`<button class="${c}${k===p?" active":""}" data-go="${k}"><i>${PAGES[k][1]}</i><span>${PAGES[k][0]}</span>${bd[k]?`<b class="bd">${bd[k]}</b>`:""}</button>`,main=MAIN[me.role],mb=NAV[me.role].filter(k=>!main.includes(k)).reduce((a,k)=>a+(bd[k]||0),0);
+ $("navigation").innerHTML=NAV[me.role].map(k=>b(k,"nav-btn")).join("");
+ $("tabbar").innerHTML=main.map(k=>b(k,"tab")).join("")+`<button class="tab${main.includes(p)?"":" active"}" data-a="more"><i>☰</i><span>Más</span>${mb?`<b class="bd">${mb}</b>`:""}</button>`;
+ $("pageTitle").textContent=PAGES[p][2]||PAGES[p][0];const c=$("content");PAGE[p]();c.classList.remove("in");void c.offsetWidth;c.classList.add("in");if(!keep)scrollTo(0,0)}
+function moreSheet(){const rest=NAV[me.role].filter(k=>!MAIN[me.role].includes(k)),bd=badges();
+ sheet(`<div class="sh-title">Menú<button class="x" data-a="close">✕</button></div><div class="actgrid">${rest.map(k=>`<button class="act" data-go="${k}"><i>${PAGES[k][1]}</i><span>${PAGES[k][2]||PAGES[k][0]}${bd[k]?` (${bd[k]})`:""}</span></button>`).join("")}</div><p class="help center">${esc(me.displayName||me.email)} · ${ROLES[me.role]}</p><button class="ghost full" data-a="logout">Cerrar sesión</button>`)}
+const fshort=d=>d?d.slice(8,10)+"/"+d.slice(5,7):"";
+const first=n=>String(n||"").trim().split(/[\s@]/)[0];
+const avatar=(n,big)=>{n=String(n||"?").trim();let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))%360;return `<span class="av${big?" lg":""}" style="--h:${h}">${esc(n.split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase())}</span>`};
+const expChip=c=>{if(c.status==="inactive")return pill("Inactivo","bad");const d=dleft(c);if(d===null)return c.status==="pending"?pill("Pendiente","pending"):pill("Sin fecha");return d<0?pill("Vencido "+-d+"d","bad"):d<=7?pill(d===0?"Vence hoy":"Vence en "+d+"d","pending"):pill("Al día · "+fshort(c.expiresAt),"ok")};
+const crow=c=>`<button class="lrow" data-a="client" data-id="${c.id}">${avatar(c.fullName||c.name)}<div class="lmain"><b>${esc(c.fullName||c.name)}</b><small>${esc([c.city,c.plan].filter(Boolean).join(" · ")||c.phone||"")}</small></div><div class="lend">${expChip(c)}</div></button>`;
+const renewUrl=c=>{const u=wa(c.phone);return u?`${u}?text=${encodeURIComponent(`Hola ${first(c.fullName||c.name)}, tu servicio ${dleft(c)<0?"venció":"vence"} el ${c.expiresAt}. ¿Querés renovarlo?`)}`:""};
+const empty=(i,t)=>`<div class="empty"><i>${i}</i>${t}</div>`;
 function home(){
  const ap=tx.filter(x=>x.status==="approved"),pend=tx.filter(x=>x.status==="pending"),A=isA(),R=isR(),exp=clients.filter(soon).sort((a,b)=>dleft(a)-dleft(b)),
   mine=sum(ap,R?"recruiterCommission":"resellerCommission"),ps=sets.filter(x=>x.status!=="confirmed").length;
- const acts=[A&&reqs.length&&`<button class="small-btn" data-go="requests">Solicitudes (${reqs.length})</button>`,A&&ps&&`<button class="small-btn" data-go="settlements">Confirmar liquidaciones (${ps})</button>`,(A||R)&&pend.length&&`<button class="small-btn" data-go="transactions">Verificar pagos (${pend.length})</button>`,!A&&!R&&`<button class="small-btn" data-a="newTx">＋ Informar pago</button>`,!R&&`<button class="small-btn" data-a="newClient">＋ Nuevo cliente</button>`].filter(Boolean);
- shell(`<div class="grid">${stat("Clientes",clients.length,"en tu cartera","clients")}${stat("Por vencer",exp.length,"vencidos o ≤ 7 días","clients")}${stat("Pagos pendientes",pend.length,"sin verificar","transactions")}${A?stat("Cobrado",cash(sum(ap,"amount")),ap.length+" pagos verificados","accounting"):stat("Mi comisión",cash(mine),ap.length+" pagos verificados")}</div>
- ${acts.length?`<div class="toolbar acts">${acts.join("")}</div>`:""}
- <section class="panel"><h2>Vencen pronto</h2>${table(["Cliente","Vence","WhatsApp"],exp.slice(0,8).map(c=>[`<b>${esc(c.fullName||c.name)}</b>`,expTag(c),renewBtn(c)]),"Nada por vencer ✓")}</section>`)}
-const expTag=c=>{const d=dleft(c);return d===null?"—":`${esc(c.expiresAt)} ${d<0?pill("Vencido "+-d+"d","bad"):d<=7?pill(d===0?"Hoy":d+" d","pending"):""}`};
-const renewBtn=c=>{const u=wa(c.phone);return u?`<a class="small-btn" target="_blank" rel="noopener" href="${u}?text=${encodeURIComponent(`Hola buenas!${c.fullName||c.name}, queria informarte que tu servicio ${dleft(c)<0?"venció":"vence"} el ${c.expiresAt}. y me interesaria saber si ¿Querés renovarlo?.`)}">Contactar y Avisar</a>`:"—"};
+ const q=[A&&[reqs.length,"✚","Solicitudes de alta","requests"],(A||R)&&[pend.length,"💳","Pagos por verificar","transactions"],A&&[ps,"🧾","Liquidaciones por confirmar","settlements"]].filter(x=>x&&x[0]);
+ shell(`<div class="hello"><h2>Hola, ${esc(first(me.displayName||me.email))} 👋</h2><p>${new Date().toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})}</p></div>
+ ${!A&&!R?`<button class="cta" data-a="newTx"><span class="cta-i">💳</span><div><b>Registrar un pago</b><small>Alta o renovación de un cliente</small></div><i>›</i></button>`:""}
+ ${q.length?`<div class="queue">${q.map(x=>`<button class="qcard" data-go="${x[3]}"><span>${x[1]}</span><b>${x[0]}</b><small>${x[2]}</small></button>`).join("")}</div>`:""}
+ <div class="grid">${stat("Clientes",clients.length,"en tu cartera","clients")}${stat("Por vencer",exp.length,"vencidos o ≤ 7 días","clients")}${stat("En revisión",pend.length,"pagos sin verificar","transactions")}${A?stat("Cobrado",cash(sum(ap,"amount")),ap.length+" verificados","accounting"):stat("Mi comisión",cash(mine),ap.length+" verificados")}</div>
+ <section class="panel"><div class="panel-head"><h2>Vencen pronto</h2></div><div class="list">${exp.slice(0,8).map(crow).join("")||empty("✓","Nada por vencer")}</div></section>`)}
 
 function accessPage(){
  getDocs(query(collection(db,"accessRequests"),where("uid","==",me.uid))).then(r=>{
@@ -88,13 +106,19 @@ function accessPage(){
 
 /* Clientes */
 function clientsPage(){
- shell(`<section class="panel"><div class="panel-head"><h2>${isA()?"Cartera general":isR()?"Cartera del equipo":"Mis clientes"}</h2>${isR()?"":`<button class="primary" data-a="newClient">＋ Cliente</button>`}</div>
- <div class="toolbar">${search()}</div>${chips([["","Todos"],["active","Activos"],["exp","Por vencer"],["pending","Pendientes"],["inactive","Inactivos"]])}<div id="list">${clientList()}</div></section>`)}
+ shell(`<div class="toolbar">${search()}</div>${chips([["","Todos"],["active","Activos"],["exp","Por vencer"],["pending","Pendientes"],["inactive","Inactivos"]])}<div id="list" class="list">${clientList()}</div>`,isR()?null:["newClient","Cliente"])}
 function clientList(){
  const q=F.q.toLowerCase(),rows=clients.filter(c=>(c.fullName+" "+c.phone+" "+c.city+" "+c.email).toLowerCase().includes(q)&&(!F.s||(F.s==="exp"?soon(c):c.status===F.s)));
- const st={active:["Activo","ok"],inactive:["Inactivo","bad"]},own=!isA()&&!isR()?0:1;
- return table(["Cliente","WhatsApp","Vence",...(own?["A cargo"]:[]),"Estado",""],rows.map(c=>{const s=st[c.status]||["Pendiente","pending"],u=wa(c.phone);
-  return [`<b>${esc(c.fullName||c.name)}</b><br><span class="help">${esc([c.city,c.plan].filter(Boolean).join(" · "))}</span>`,u?`<a class="link-btn" target="_blank" rel="noopener" href="${u}">${esc(c.phone)}</a>`:"—",expTag(c),...(own?[esc(nm(c.resellerId))]:[]),pill(s[0],s[1]),`<div class="toolbar">${!isA()&&!isR()?`<button class="small-btn" data-a="newTx" data-id="${c.id}">Cobrar</button>`:""}<button class="small-btn" data-a="editClient" data-id="${c.id}">Editar</button></div>`]}),"Sin clientes.")}
+ return rows.map(crow).join("")||empty("👥",F.q||F.s?"Sin resultados.":"Todavía no hay clientes.")}
+function clientSheet(id){
+ const c=clients.find(x=>x.id===id);if(!c)return;const u=wa(c.phone),hist=tx.filter(t=>t.clientId===id).slice(0,4),rn=renewUrl(c);
+ sheet(`<div class="cs-head">${avatar(c.fullName||c.name,1)}<div class="lmain"><b>${esc(c.fullName||c.name)}</b><small>${esc([c.phone,c.city].filter(Boolean).join(" · "))}</small></div>${expChip(c)}</div>
+ <div class="kv"><span>Plan</span><b>${esc(c.plan||"—")}</b><span>Vence</span><b>${esc(c.expiresAt||"—")}</b>${isA()||isR()?`<span>A cargo</span><b>${esc(nm(c.resellerId))}</b>`:""}</div>${c.notes?`<p class="note">${esc(c.notes)}</p>`:""}
+ <div class="actgrid">${!isA()&&!isR()?`<button class="act pri" data-a="newTx" data-id="${id}"><i>💳</i><span>Cobrar</span></button>`:""}${u?`<a class="act" target="_blank" rel="noopener" href="${u}"><i>💬</i><span>WhatsApp</span></a>`:""}<button class="act" data-a="msgClient" data-id="${id}"><i>✉</i><span>Mensaje</span></button>${rn&&soon(c)?`<a class="act" target="_blank" rel="noopener" href="${rn}"><i>⏰</i><span>Avisar venc.</span></a>`:""}<button class="act" data-a="editClient" data-id="${id}"><i>✎</i><span>Editar</span></button></div>
+ ${hist.length?`<h3>Últimos pagos</h3><div class="list">${hist.map(txRow).join("")}</div>`:""}`)}
+function msgClient(id){
+ const c=clients.find(x=>x.id===id),ms=msgs.filter(m=>(m.dest||"both")!=="admin");
+ sheet(`<div class="sh-title">Mensaje para ${esc(first(c.fullName||c.name))}<button class="x" data-a="close">✕</button></div><div class="list">${ms.map(m=>`<button class="lrow" data-a="pickMsg" data-id="${m.id}" data-c="${id}"><div class="ico">✉</div><div class="lmain"><b>${esc(m.title)}</b><small>${esc(m.body)}</small></div><i>›</i></button>`).join("")||empty("✉","No hay mensajes para clientes.")}</div>`)}
 function clientForm(c){
  const rs=team.filter(u=>u.role==="reseller"&&u.active!==false);
  openForm(c?"Editar cliente":"Nuevo cliente",`${fld("fullName","Nombre y apellido",{req:1,v:c?.fullName||c?.name})}${fld("phone","WhatsApp",{req:1,type:"tel",v:c?.phone})}${fld("email","Correo (opcional)",{type:"email",v:c?.email})}${fld("city","Localidad",{v:c?.city})}${fld("plan","Plan",{v:c?.plan})}${fld("status","Estado",{v:c?.status||"pending",opts:[["pending","Pendiente"],["active","Activo"],["inactive","Inactivo"]]})}${fld("startDate","Alta",{type:"date",v:c?.startDate||today()})}${fld("expiresAt","Vencimiento",{type:"date",v:c?.expiresAt})}${isA()&&!c?fld("resellerId","Revendedora",{req:1,opts:[["","Elegir…"],...rs.map(u=>[u.uid,u.displayName||u.email])]}):""}${fld("notes","Notas (sin DNI ni datos sensibles)",{type:"textarea",v:c?.notes})}`,async f=>{
@@ -104,32 +128,49 @@ function clientForm(c){
   await refresh();return "Cliente guardado."})}
 
 /* Pagos */
+const txPill=t=>t.status==="approved"?pill("Verificado","ok"):t.status==="rejected"?pill("Observado","bad"):pill("En revisión","pending");
+const txRow=t=>`<button class="lrow" data-a="tx" data-id="${t.id}"><div class="ico">${t.status==="approved"?"✅":"💳"}</div><div class="lmain"><b>${esc(t.clientName)}</b><small>${t.type==="new"?"Alta":"Renovación"} · ${fdate(t.createdAt)}${isA()||isR()?" · "+esc(nm(t.resellerId)):""}</small></div><div class="lend"><b>${cash(t.amount)}</b>${txPill(t)}</div></button>`;
 function txPage(){
- shell(`<section class="panel"><div class="panel-head"><h2>${isA()?"Todos los pagos":isR()?"Pagos de mi equipo":"Mis pagos"}</h2>${!isA()&&!isR()?`<button class="primary" data-a="newTx">＋ Informar pago</button>`:""}</div>${chips([["","Todos"],["pending","Pendientes"],["approved","Verificados"]])}<div id="list">${txList()}</div></section>`)}
-function txList(){
- const st={approved:["Verificado","ok"],rejected:["Observado","bad"]},mgr=isA()||isR();
- return table(["Fecha","Cliente","Tipo","Importe","Comprobante","Estado",...(mgr?[""]:[])],tx.filter(t=>!F.s||t.status===F.s).map(t=>{const s=st[t.status]||["Pendiente","pending"];
-  return [fdate(t.createdAt),`<b>${esc(t.clientName)}</b>${mgr?`<br><span class="help">${esc(nm(t.resellerId))}</span>`:""}`,t.type==="new"?"Alta":"Renovación",`<b>${cash(t.amount)}</b>`,proof(t.proofUrl),pill(s[0],s[1]),...(mgr?[t.status==="pending"?`<button class="small-btn" data-a="verify" data-id="${t.id}">Verificar</button>`:""]:[])]}),"Sin pagos.")}
+ shell(`${chips([["","Todos"],["pending","En revisión"],["approved","Verificados"]])}<div id="list" class="list">${txList()}</div>`,!isA()&&!isR()?["newTx","Registrar pago"]:null)}
+const txList=()=>tx.filter(t=>!F.s||t.status===F.s).map(txRow).join("")||empty("💳","Sin pagos.");
+function txSheet(id){
+ const t=tx.find(x=>x.id===id);if(!t)return;const mgr=isA()||isR(),ok=t.status==="approved";
+ sheet(`<div class="sh-title">Pago<button class="x" data-a="close">✕</button></div><div class="bigamt">${cash(t.amount)}</div><div class="center">${txPill(t)}</div>
+ <div class="kv"><span>Cliente</span><b>${esc(t.clientName)}</b><span>Tipo</span><b>${t.type==="new"?"Alta nueva":"Renovación"}</b><span>Medio</span><b>${esc(t.method||"—")}</b><span>Fecha</span><b>${fdate(t.createdAt)}</b>${mgr?`<span>Revendedora</span><b>${esc(nm(t.resellerId))}</b>`:""}${ok&&!isA()?`<span>Tu comisión</span><b>${cash(isR()?t.recruiterCommission:t.resellerCommission)}</b>`:""}</div>
+ ${t.proofUrl?`<a href="${esc(t.proofUrl)}" target="_blank" rel="noopener"><img class="proofbig" src="${esc(t.proofUrl)}" alt="Comprobante"></a>`:""}
+ ${t.status==="pending"?(mgr?`<button class="primary full lg" data-a="verify" data-id="${id}">Verificar cobro</button>`:`<p class="note">⏳ Tu coordinadora está revisando este pago.</p>`):""}`)}
 function txForm(cid){
  if(!clients.length)return toast("Primero cargá un cliente.",1);
- const c=clients.find(x=>x.id===cid);
- openForm("Informar pago",`${fld("clientId","Cliente",{v:cid,opts:clients.map(c=>[c.id,c.fullName||c.name])})}${fld("type","Tipo",{v:c?"renewal":"new",opts:[["new","Alta nueva"],["renewal","Renovación"]]})}${fld("amount","Importe",{type:"number",min:1,req:1,v:S.publicPrice})}${fld("method","Medio",{opts:["Transferencia","Efectivo","Mercado Pago","Otro"].map(x=>[x,x])})}${fld("reference","Referencia")}${fld("proof","Comprobante (captura legible)",{type:"file",accept:"image/*",req:1})}`,async f=>{
-  const cl=clients.find(x=>x.id===f.get("clientId")),proofUrl=await upload(f.get("proof"));
-  await addDoc(collection(db,"transactions"),{clientId:cl.id,clientName:cl.fullName||cl.name,type:f.get("type"),amount:+f.get("amount"),method:f.get("method"),reference:f.get("reference"),proofUrl,status:"pending",resellerId:me.uid,recruiterId:me.recruiterId||null,createdBy:me.uid,createdAt:ts()});
-  await refresh();return "Pago enviado a verificación."},"Enviar")}
+ const c=clients.find(x=>x.id===cid),ty=c&&c.status==="active"?"renewal":"new";
+ const f=sheetForm("Registrar pago",`<div class="step"><b>1</b>¿De qué cliente es?</div>
+ <select name="clientId" required>${c?"":'<option value="">Elegir cliente…</option>'}${clients.map(x=>`<option value="${x.id}"${x.id===cid?" selected":""}>${esc(x.fullName||x.name)}</option>`).join("")}</select>
+ <div class="step"><b>2</b>¿Qué cobraste?</div>
+ <div class="seg"><label><input type="radio" name="type" value="new"${ty==="new"?" checked":""}><span>Alta nueva</span></label><label><input type="radio" name="type" value="renewal"${ty==="renewal"?" checked":""}><span>Renovación</span></label></div>
+ <label>Importe cobrado<input class="big" name="amount" type="number" inputmode="numeric" min="1" required value="${S.publicPrice}"></label>
+ <div class="seg wrap">${["Transferencia","Efectivo","Mercado Pago","Otro"].map((m,i)=>`<label><input type="radio" name="method" value="${m}"${i?"":" checked"}><span>${m}</span></label>`).join("")}</div>
+ <div class="step"><b>3</b>Foto del comprobante</div>${photoField()}<div class="earn" id="earn"></div>`,async f=>{
+  const cl=clients.find(x=>x.id===f.get("clientId"));if(!cl)throw Error("Elegí un cliente.");const proofUrl=await upload(f.get("proof"));
+  await addDoc(collection(db,"transactions"),{clientId:cl.id,clientName:cl.fullName||cl.name,type:f.get("type"),amount:+f.get("amount"),method:f.get("method"),proofUrl,status:"pending",resellerId:me.uid,recruiterId:me.recruiterId||null,createdBy:me.uid,createdAt:ts()});
+  await refresh();return "Pago enviado. Queda en revisión."},"Enviar para verificación");
+ bindPhoto(f);const earn=()=>{$("earn").innerHTML=`Tu comisión por este pago: <b>${cash(f.elements.type.value==="new"?S.newReseller:S.renewReseller)}</b> (se acredita al verificarse)`};f.oninput=earn;earn()}
 async function verify(id){const t=tx.find(x=>x.id===id),n=t.type==="new",rs=n?S.newReseller:S.renewReseller,rc=n?S.newRecruiter:S.renewRecruiter,tr=+t.amount-rs-rc;
  await updateDoc(doc(db,"transactions",id),{status:"approved",verifiedBy:me.uid,verifiedAt:ts(),resellerCommission:rs,recruiterCommission:rc,supplierCost:S.supplierCost,tvMargin:tr-S.supplierCost,adminTransfer:tr});await refresh();return "Cobro verificado."}
 
 /* Liquidaciones */
-function setsPage(){
- shell(`<section class="panel"><div class="panel-head"><h2>${isA()?"Liquidaciones recibidas":isR()?"Mis liquidaciones":"Mis comisiones"}</h2>${isR()?`<button class="primary" data-a="newSet">＋ Informar transferencia</button>`:""}</div>
- ${table(["Fecha","Destinatario","Concepto","Importe","Comprobante","Estado",...(isA()?[""]:[])],sets.map(s=>[fdate(s.createdAt),esc(s.payeeName||s.payeeType),esc(s.concept||"Liquidación"),`<b>${cash(s.amount)}</b>`,proof(s.proofUrl),s.status==="confirmed"?pill("Confirmada","ok"):pill("Pendiente","pending"),...(isA()?[s.status!=="confirmed"?`<button class="small-btn" data-a="confirm" data-id="${s.id}">Confirmar</button>`:""]:[])]),"Sin liquidaciones.")}</section>`)}
+const setRow=s=>`<button class="lrow" data-a="set" data-id="${s.id}"><div class="ico">🧾</div><div class="lmain"><b>${esc(s.payeeName||s.payeeType)}</b><small>${esc(s.concept||"Liquidación")} · ${fdate(s.createdAt)}</small></div><div class="lend"><b>${cash(s.amount)}</b>${s.status==="confirmed"?pill("Confirmada","ok"):pill("Pendiente","pending")}</div></button>`;
+function setsPage(){shell(`<div class="list">${sets.map(setRow).join("")||empty("🧾","Sin liquidaciones.")}</div>`,isR()?["newSet","Informar transferencia"]:null)}
+function setSheet(id){
+ const s=sets.find(x=>x.id===id);if(!s)return;
+ sheet(`<div class="sh-title">Liquidación<button class="x" data-a="close">✕</button></div><div class="bigamt">${cash(s.amount)}</div><div class="center">${s.status==="confirmed"?pill("Confirmada","ok"):pill("Pendiente","pending")}</div>
+ <div class="kv"><span>Destinatario</span><b>${esc(s.payeeName||s.payeeType)}</b><span>Concepto</span><b>${esc(s.concept||"—")}</b><span>Fecha</span><b>${fdate(s.createdAt)}</b>${s.reference?`<span>Referencia</span><b>${esc(s.reference)}</b>`:""}</div>
+ ${s.proofUrl?`<a href="${esc(s.proofUrl)}" target="_blank" rel="noopener"><img class="proofbig" src="${esc(s.proofUrl)}" alt="Comprobante"></a>`:""}
+ ${isA()&&s.status!=="confirmed"?`<button class="primary full lg" data-a="confirm" data-id="${id}">Confirmar recepción</button>`:""}`)}
 function setForm(){
  const rs=team.filter(u=>u.role==="reseller");
- openForm("Informar transferencia",`${fld("payee","Destinatario",{opts:[["tv","TV (incluye costo proveedor)"],...rs.map(u=>[u.uid,u.displayName||u.email])]})}${fld("amount","Importe",{type:"number",min:1,req:1})}${fld("concept","Concepto",{opts:["Comisión de revendedora","Liquidación a TV","Otro ajuste"].map(x=>[x,x])})}${fld("reference","Referencia")}${fld("proof","Comprobante",{type:"file",accept:"image/*",req:1})}`,async f=>{
+ const f=sheetForm("Informar transferencia",`<div class="form-grid">${fld("payee","¿A quién le transferiste?",{wide:1,opts:[["tv","TV (incluye costo proveedor)"],...rs.map(u=>[u.uid,u.displayName||u.email])]})}${fld("amount","Importe",{type:"number",min:1,req:1})}${fld("concept","Concepto",{opts:["Comisión de revendedora","Liquidación a TV","Otro ajuste"].map(x=>[x,x])})}${fld("reference","N° de operación (opcional)",{wide:1})}</div><div class="step"><b>📎</b>Comprobante</div>${photoField()}`,async f=>{
   const p=f.get("payee"),r=p!=="tv",proofUrl=await upload(f.get("proof"));
   await addDoc(collection(db,"settlements"),{payeeType:r?"reseller":"super_admin",payeeName:r?nm(p):"TV",resellerId:r?p:null,amount:+f.get("amount"),concept:f.get("concept"),reference:f.get("reference"),proofUrl,status:"pending",recruiterId:me.uid,createdBy:me.uid,createdAt:ts()});
-  await refresh();return "Liquidación enviada."},"Enviar")}
+  await refresh();return "Liquidación enviada."},"Enviar");bindPhoto(f)}
 
 /* Altas / equipo */
 function reqPage(){
@@ -168,13 +209,21 @@ function accPage(){
   run(async()=>{await setDoc(doc(db,"config","accounting"),{...d,updatedAt:ts(),updatedBy:me.uid});S=d;accPage();return "Parámetros guardados."})}}
 
 /* Mensajes y galería */
-const openWa=t=>{const u=wa(contact.whatsappNumber);if(!u)return toast("El administrador aún no configuró el WhatsApp.",1);window.open(`${u}?text=${encodeURIComponent(t)}`,"_blank","noopener")};
+const openWa=(t,phone=contact.whatsappNumber)=>{const u=wa(phone);if(!u)return toast(phone===contact.whatsappNumber?"El administrador aún no configuró su WhatsApp.":"Este cliente no tiene WhatsApp cargado.",1);window.open(`${u}?text=${encodeURIComponent(t)}`,"_blank","noopener")};
+const fill=(t,c)=>t.replace(/\{nombre\}/gi,first(c.fullName||c.name)).replace(/\{vence\}/gi,c.expiresAt||"").replace(/\{plan\}/gi,c.plan||"");
+const DEST={client:["Para clientes","ok"],admin:["Para el admin","pending"],both:["Clientes y admin",""]};
 function msgsPage(){
- shell(`<section class="panel"><div class="panel-head"><h2>Mensajes del equipo</h2>${isA()?`<button class="primary" data-a="newMsg">＋ Mensaje</button>`:""}</div><div class="cards">${msgs.map(m=>`<article class="card"><div class="message-meta">${pill(esc(m.kind||"general"))}<b>${esc(m.title)}</b></div><p>${esc(m.body).replace(/\n/g,"<br>")}</p><div class="toolbar">${m.action!=="none"?`<button class="small-btn" data-a="sendMsg" data-id="${m.id}">${esc(m.buttonLabel||"Enviar por WhatsApp")}</button>`:""}<button class="small-btn" data-a="copyMsg" data-id="${m.id}">Copiar</button>${isA()?`<button class="small-btn" data-a="editMsg" data-id="${m.id}">Editar</button><button class="small-btn danger" data-a="delMsg" data-id="${m.id}">Eliminar</button>`:""}</div></article>`).join("")||'<div class="empty">Sin mensajes.</div>'}</div></section>`)}
+ shell(`<div class="list cards">${msgs.map(m=>{const d=DEST[m.dest||"both"];return `<article class="card"><div class="message-meta">${pill(d[0],d[1])}<b>${esc(m.title)}</b></div><p class="clamp">${esc(m.body)}</p><div class="toolbar"><button class="small-btn pri" data-a="sendMsg" data-id="${m.id}">Enviar ›</button>${isA()?`<button class="small-btn" data-a="editMsg" data-id="${m.id}">Editar</button><button class="small-btn danger" data-a="delMsg" data-id="${m.id}">Eliminar</button>`:""}</div></article>`}).join("")||empty("✉","Sin mensajes.")}</div>`,isA()?["newMsg","Mensaje"]:null)}
+function sendSheet(id){
+ const m=msgs.find(x=>x.id===id),d=m.dest||"both",cl=d!=="admin",ad=d!=="client"&&!isA();
+ sheet(`<div class="sh-title">${esc(m.title)}<button class="x" data-a="close">✕</button></div><label>Mensaje (podés editarlo)<textarea id="mt" rows="5">${esc(m.body)}</textarea></label>
+ ${cl?`<label>Enviar a un cliente<select id="mc"><option value="">Elegir cliente…</option>${clients.map(c=>`<option value="${c.id}">${esc(c.fullName||c.name)}</option>`).join("")}</select></label><button class="primary full lg" data-a="sendClient">Enviar por WhatsApp</button>`:""}
+ ${ad?`<button class="primary full lg" data-a="sendAdmin">Enviar al administrador</button>`:""}
+ <div class="toolbar two"><button class="small-btn" data-a="shareMsg">Compartir…</button><button class="small-btn" data-a="copyMsg">Copiar</button></div>`)}
 function msgForm(m){
- openForm(m?"Editar mensaje":"Nuevo mensaje",`${fld("title","Título",{req:1,v:m?.title})}${fld("kind","Tipo",{v:m?.kind,opts:[["general","General"],["demo","Demo"],["renewal","Renovación"],["payment","Pago"],["notice","Aviso"]]})}${fld("body","Texto",{type:"textarea",req:1,v:m?.body})}${fld("buttonLabel","Texto del botón (opcional)",{v:m?.buttonLabel})}${fld("action","Acción",{v:m?.action,opts:[["whatsapp","WhatsApp"],["none","Solo lectura"]]})}<div class="wide help">Visible para:</div>${roleChecks(m?.roles)}`,async f=>{
+ openForm(m?"Editar mensaje":"Nuevo mensaje",`${fld("title","Título",{req:1,v:m?.title})}${fld("kind","Tipo",{v:m?.kind,opts:[["general","General"],["demo","Demo"],["renewal","Renovación"],["payment","Pago"],["notice","Aviso"]]})}${fld("dest","¿Para quién es?",{v:m?.dest||"client",wide:1,opts:[["client","Para enviar a clientes"],["admin","Para enviar al administrador"],["both","Ambos"]]})}${fld("body","Texto",{type:"textarea",req:1,v:m?.body})}<div class="wide help">Podés usar {nombre}, {vence} y {plan}: se completan con los datos del cliente elegido.</div><div class="wide help">Visible para:</div>${roleChecks(m?.roles)}`,async f=>{
   const roles=f.getAll("roles");if(!roles.length)throw Error("Elegí al menos un rol.");
-  const d={title:f.get("title"),kind:f.get("kind"),body:f.get("body"),roles,buttonLabel:f.get("buttonLabel"),action:f.get("action"),active:true,updatedBy:me.uid,updatedAt:ts()};
+  const d={title:f.get("title"),kind:f.get("kind"),body:f.get("body"),roles,dest:f.get("dest"),active:true,updatedBy:me.uid,updatedAt:ts()};
   if(m)await updateDoc(doc(db,"contentMessages",m.id),d);else await addDoc(collection(db,"contentMessages"),{...d,createdBy:me.uid,createdAt:ts()});
   await refresh();return "Mensaje guardado."})}
 function galPage(){
@@ -189,26 +238,33 @@ function galForm(g){
 
 /* Ayuda */
 function helpPage(){
- const tip={super_admin:"Aprobá altas, controlá pagos y liquidaciones, y ajustá parámetros en Contable.",recruiter:"Verificá los pagos de tu equipo y registrá cada transferencia con su comprobante.",reseller:"Cargá tus clientes, avisá vencimientos con un toque y registrá cada pago con su comprobante."}[me.role];
- shell(`<section class="panel"><h2>Soporte</h2><p class="help">${tip}</p><div class="toolbar"><button class="primary" data-a="support">WhatsApp de soporte</button></div></section>
- ${isA()?`<section class="panel"><h2>Contacto oficial</h2><form id="cf"><div class="form-grid">${fld("whatsappNumber","Número internacional (solo dígitos)",{req:1,type:"tel",v:contact.whatsappNumber,ph:"549..."})}${fld("supportMessage","Mensaje de soporte",{type:"textarea",v:contact.supportMessage||"Hola, necesito ayuda con el panel TV."})}</div><div class="form-actions"><button class="primary">Guardar</button></div></form></section>`:""}`);
+ const tip={super_admin:"Aprobá altas, controlá pagos y liquidaciones, y ajustá parámetros en Contable.",recruiter:"Verificá los pagos de tu equipo y registrá cada transferencia con su comprobante.",reseller:"Cargá tus clientes, registrá cada pago con su foto y avisá vencimientos con un toque."}[me.role];
+ shell(`<section class="panel"><h2>Cómo funciona</h2><p class="help">${tip}</p></section>
+ ${isA()?`<section class="panel"><h2>Contacto oficial</h2><form id="cf"><div class="form-grid">${fld("whatsappNumber","Tu WhatsApp (solo dígitos, con 549…)",{req:1,type:"tel",v:contact.whatsappNumber,wide:1})}${fld("supportMessage","Mensaje de soporte por defecto",{type:"textarea",v:contact.supportMessage||"Hola, necesito ayuda con el panel TV."})}</div><div class="form-actions"><button class="primary">Guardar</button></div></form></section>`:`<section class="panel"><h2>Escribirle al administrador</h2><label>Mensaje<textarea id="hm" rows="3">${esc(contact.supportMessage||"Hola, necesito ayuda con el panel TV.")}</textarea></label><button class="primary full lg" data-a="support" style="margin-top:10px">Enviar por WhatsApp</button></section>`}`);
  if($("cf"))$("cf").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),n=String(f.get("whatsappNumber")).replace(/\D/g,"");if(n.length<10||n.length>15)return toast("Número inválido.",1);
   run(async()=>{contact={whatsappNumber:n,supportMessage:f.get("supportMessage")};await setDoc(doc(db,"config","contact"),{...contact,updatedAt:ts(),updatedBy:me.uid});return "Contacto guardado."})}}
 
 const PAGE={home,requests:reqPage,clients:clientsPage,transactions:txPage,settlements:setsPage,team:teamPage,reassign:reassignPage,accounting:accPage,messages:msgsPage,gallery:galPage,help:helpPage};
+const mt=()=>$("mt")?.value||"";
 const ACT={
- close:()=>$("fp").classList.add("hidden"),
- chip:(s)=>{F.s=s;go(page,true)},
- newClient:()=>{go("clients");clientForm()},editClient:id=>clientForm(clients.find(c=>c.id===id)),
- newTx:id=>txForm(id),verify:id=>run(()=>verify(id)),
- newSet:setForm,confirm:id=>run(async()=>{await updateDoc(doc(db,"settlements",id),{status:"confirmed",confirmedBy:me.uid,confirmedAt:ts()});await refresh();return "Recepción confirmada."}),
+ close:closeSheet,more:moreSheet,logout:()=>signOut(auth),
+ chip:s=>{F.s=s;document.querySelectorAll(".chips .chip").forEach(b=>b.classList.toggle("on",b.dataset.id===s));$("list").innerHTML=page==="clients"?clientList():txList()},
+ client:clientSheet,msgClient,pickMsg:(id,b)=>{const c=clients.find(x=>x.id===b.dataset.c),m=msgs.find(x=>x.id===id);openWa(fill(m.body,c),c.phone)},
+ newClient:()=>{page!=="clients"&&go("clients");clientForm()},editClient:id=>clientForm(clients.find(c=>c.id===id)),
+ newTx:id=>txForm(id),tx:txSheet,verify:id=>run(async()=>{const m=await verify(id);closeSheet();return m}),
+ newSet:setForm,set:setSheet,confirm:id=>run(async()=>{await updateDoc(doc(db,"settlements",id),{status:"confirmed",confirmedBy:me.uid,confirmedAt:ts()});await refresh();closeSheet();return "Recepción confirmada."}),
  approve:id=>run(()=>approve(id)),reject:id=>run(async()=>{await updateDoc(doc(db,"accessRequests",id),{status:"rejected",reviewedBy:me.uid,reviewedAt:ts()});await refresh();return "Solicitud rechazada."}),
  newUser:userForm,toggle:id=>run(async()=>{const u=team.find(x=>x.uid===id);await updateDoc(doc(db,"users",id),{active:u.active===false});await refresh();return "Usuario actualizado."}),
  copy:id=>navigator.clipboard?.writeText(id).then(()=>toast("Copiado."),()=>toast(id)),
- newMsg:()=>msgForm(),editMsg:id=>msgForm(msgs.find(m=>m.id===id)),sendMsg:id=>openWa(msgs.find(m=>m.id===id).body),copyMsg:id=>navigator.clipboard?.writeText(msgs.find(m=>m.id===id).body).then(()=>toast("Texto copiado.")),
+ newMsg:()=>msgForm(),editMsg:id=>msgForm(msgs.find(m=>m.id===id)),sendMsg:sendSheet,
+ sendClient:()=>{const c=clients.find(x=>x.id===$("mc").value);if(!c)return toast("Elegí un cliente.",1);openWa(fill(mt(),c),c.phone)},sendAdmin:()=>openWa(mt()),
+ shareMsg:()=>navigator.share?navigator.share({text:mt()}).catch(()=>{}):ACT.copyMsg(),copyMsg:()=>navigator.clipboard?.writeText(mt()).then(()=>toast("Texto copiado.")),
  delMsg:id=>confirm("¿Eliminar mensaje?")&&run(async()=>{await deleteDoc(doc(db,"contentMessages",id));await refresh();return "Eliminado."}),
  newGal:()=>galForm(),editGal:id=>galForm(gal.find(g=>g.id===id)),
  delGal:id=>confirm("¿Quitar material?")&&run(async()=>{await deleteDoc(doc(db,"gallery",id));await refresh();return "Quitado."}),
- support:()=>openWa(contact.supportMessage||"Hola, necesito ayuda con el panel TV.")};
-document.addEventListener("click",e=>{const b=e.target.closest("[data-go],[data-a]");if(!b)return;if(b.dataset.go)return go(b.dataset.go);ACT[b.dataset.a]?.(b.dataset.id)});
+ support:()=>openWa($("hm")?.value||"Hola, necesito ayuda con el panel TV.")};
+document.addEventListener("click",e=>{const b=e.target.closest("[data-go],[data-a]");if(!b)return;if(b.dataset.go){closeSheet();return go(b.dataset.go)}ACT[b.dataset.a]?.(b.dataset.id,b)});
 document.addEventListener("input",e=>{if(e.target.id!=="q")return;F.q=e.target.value;$("list").innerHTML=clientList()});
+document.addEventListener("keydown",e=>e.key==="Escape"&&closeSheet());
+$("refreshBtn").onclick=()=>me&&run(async()=>{$("refreshBtn").classList.add("spin");try{await refresh()}finally{$("refreshBtn").classList.remove("spin")}return "Actualizado."});
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
